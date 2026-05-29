@@ -144,17 +144,23 @@ def call_deepseek(prompt: str, max_tokens: int = 4096) -> str:
 def _format_market_section(data: dict) -> str:
     lines = []
     for idx in data.get("indices", []):
-        sign = "+" if idx.get("change_pct", 0) >= 0 else ""
-        lines.append(f"- {idx['display_name']}: {idx['price']} ({sign}{idx['change_pct']:.2f}%)")
+        pct = idx.get("change_pct") or idx.get("week_change_pct", 0)
+        sign = "+" if pct >= 0 else ""
+        if "week_change_pct" in idx:
+            label = "周涨跌"
+        else:
+            label = ""
+        lines.append(f"- {idx['display_name']}: {idx['price']} ({sign}{pct:.2f}%{f' {label}' if label else ''})")
     return "\n".join(lines)
 
 
 def _format_sector_section(data: dict) -> str:
     lines = []
-    sectors = sorted(data.get("sectors", []), key=lambda x: x.get("change_pct") or 0, reverse=True)
+    sectors = sorted(data.get("sectors", []), key=lambda x: x.get("change_pct") or x.get("week_change_pct") or 0, reverse=True)
     for s in sectors:
-        sign = "+" if (s.get("change_pct") or 0) >= 0 else ""
-        lines.append(f"- {s['display_name']}: {sign}{s['change_pct']:.2f}%")
+        pct = s.get("change_pct") or s.get("week_change_pct") or 0
+        sign = "+" if pct >= 0 else ""
+        lines.append(f"- {s['display_name']}: {sign}{pct:.2f}%")
     return "\n".join(lines)
 
 
