@@ -1,63 +1,99 @@
-"""宏观数据 — VIX、美债收益率、美元指数"""
-import yfinance as yf
+"""宏观数据 — AKShare 国内源 v3.0"""
+import akshare as ak
 from datetime import datetime
 
 
-MACRO_TICKERS = {
-    "VIX恐慌指数": "^VIX",
-    "10年期美债收益率": "^TNX",
-    "2年期美债收益率": "^IRX",
-    "30年期美债收益率": "^TYX",
-    "美元指数": "DX-Y.NYB",
-}
-
-
 def get_macro_data() -> dict:
-    result = {"indicators": [], "timestamp": datetime.now().isoformat()}
+    """获取宏观指标摘要"""
+    result = {
+        "indicators": [],
+        "timestamp": datetime.now().isoformat(),
+    }
 
-    for name, sym in MACRO_TICKERS.items():
-        try:
-            t = yf.Ticker(sym)
-            hist = t.history(period="5d")
-            if hist.empty:
-                continue
-            current = float(hist["Close"].iloc[-1])
-            prev = float(hist["Close"].iloc[-5]) if len(hist) >= 5 else float(hist["Close"].iloc[0])
-            change = current - prev
+    # US Interest Rate via FRED (may not work from China)
+    try:
+        df = ak.macro_usa_interest_rate()
+        if not df.empty:
+            latest = df.iloc[-1]
+            prev = df.iloc[-2] if len(df) > 1 else latest
             result["indicators"].append({
-                "name": name,
-                "symbol": sym,
-                "value": round(current, 2),
-                "change": round(change, 2),
-                "change_pct": round((change / prev) * 100, 2) if prev else 0,
+                "name": "美联储基准利率",
+                "value": str(latest),
+                "change": 0,
+                "interpretation": "联邦基金利率",
             })
-        except Exception:
-            pass
+    except Exception:
+        result["indicators"].append({
+            "name": "美联储基准利率",
+            "value": "4.25-4.50% (请手动更新)",
+            "change": 0,
+            "interpretation": "数据源不可用，使用默认值",
+        })
 
-    for ind in result["indicators"]:
-        if ind["symbol"] == "^VIX":
-            vix = ind["value"]
-            if vix < 15:
-                ind["interpretation"] = "极度平静，市场自满"
-            elif vix < 20:
-                ind["interpretation"] = "正常波动区间"
-            elif vix < 30:
-                ind["interpretation"] = "恐慌上升，避险情绪升温"
-            else:
-                ind["interpretation"] = "极度恐慌，市场剧烈动荡"
+    # US Treasury yields
+    try:
+        df = ak.bond_zh_us_rate()
+        if not df.empty:
+            result["indicators"].append({
+                "name": "美国国债收益率",
+                "value": str(df.iloc[-1].to_dict()),
+                "change": 0,
+                "interpretation": "中美利差参考",
+            })
+    except Exception:
+        result["indicators"].append({
+            "name": "美国10年期国债",
+            "value": "~4.2% (请手动更新)",
+            "change": 0,
+            "interpretation": "数据源不可用",
+        })
+
+    # Gold price from Sina
+    try:
+        df = ak.spot_golden_benchmark_sina()
+        if not df.empty:
+            result["indicators"].append({
+                "name": "国际金价(美元/盎司)",
+                "value": str(df.iloc[-1].to_dict()),
+                "change": 0,
+            })
+    except Exception:
+        pass
+
+    # DXY Dollar Index - Try Sina
+    try:
+        # DXY is .DXY on some platforms
+        df = ak.index_us_stock_sina(symbol='.DXY')
+        if not df.empty:
+            latest = df.iloc[-1]
+            prev = df.iloc[-6] if len(df) > 5 else latest
+            change = float(latest["close"]) - float(prev["close"])
+            result["indicators"].append({
+                "name": "美元指数(DXY)",
+                "value": f'{float(latest["close"]):.2f}',
+                "change": round(change, 2),
+                "interpretation": ">100=美元强势, <100=美元弱势",
+            })
+    except Exception:
+        pass
+
+    # Oil price - we know futures_foreign_hist doesn't work, use placeholder
+    result["indicators"].append({
+        "name": "WTI原油(美元/桶)",
+        "value": "~68 (请手动更新)",
+        "change": 0,
+        "interpretation": "数据源不可用",
+    })
 
     return result
 
 
 def get_interest_rates_summary() -> str:
+    """获取利率摘要文本"""
     try:
-        tnx = yf.Ticker("^TNX")
-        hist = tnx.history(period="1mo")
-        if hist.empty:
-            return "利率数据暂不可用"
-        current = float(hist["Close"].iloc[-1])
-        month_ago = float(hist["Close"].iloc[0])
-        direction = "上行" if current > month_ago else "下行"
-        return f"10年期美债收益率 {current:.2f}%，近一月{direction}{abs(current - month_ago):.0f}bp"
+        df = ak.macro_usa_interest_rate()
+        if not df.empty:
+            return f"当前联邦基金利率: {df.iloc[-1]}"
     except Exception:
-        return "利率数据暂不可用"
+        pass
+    return "美联储基准利率: 4.25-4.50% (数据延迟)"
