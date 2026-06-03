@@ -1,124 +1,60 @@
-"""市场情绪数据 — Put/Call比, VIX结构, 做空数据"""
-import yfinance as yf
+"""市场情绪 — 缓存数据计算 v4.0"""
 import numpy as np
-from datetime import datetime
-
-
-def get_vix_structure() -> dict:
-    try:
-        vix = yf.Ticker("^VIX")
-        hist = vix.history(period="1mo")
-        if hist.empty:
-            return {"current": None, "trend": "unknown", "contango": "unknown", "risk_level": "unknown"}
-
-        current = float(hist["Close"].iloc[-1])
-        sma10 = float(np.mean(hist["Close"].iloc[-10:])) if len(hist) >= 10 else current
-
-        try:
-            vix_futures = yf.Ticker("VX=F")
-            vix_fut_info = vix_futures.info
-            fut_price = vix_fut_info.get("regularMarketPrice", current)
-        except Exception:
-            fut_price = current
-
-        contango = "contango(正常)" if fut_price > current else "backwardation(风险预警)"
-        trend = "上升(恐慌加剧)" if current > sma10 else "下降(恐慌缓解)"
-
-        if current < 15:
-            risk_level = "低"
-        elif current < 25:
-            risk_level = "中"
-        elif current < 35:
-            risk_level = "高"
-        else:
-            risk_level = "极高"
-
-        return {
-            "current": round(current, 2),
-            "trend": trend,
-            "contango": contango,
-            "futures_price": round(fut_price, 2) if fut_price != current else None,
-            "risk_level": risk_level,
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def get_sp500_breadth() -> dict:
-    try:
-        spy = yf.Ticker("SPY")
-        hist = spy.history(period="3mo")
-        if hist.empty:
-            return {"breadth": None}
-        closes = hist["Close"].values
-        sma50 = float(np.mean(closes[-50:])) if len(closes) >= 50 else float(closes[-1])
-        current = float(closes[-1])
-        pct_from_50ma = (current - sma50) / sma50 * 100
-        return {
-            "spy_vs_50ma_pct": round(pct_from_50ma, 2),
-            "signal": "bullish" if pct_from_50ma > 0 else "bearish",
-        }
-    except Exception as e:
-        return {"error": str(e)}
+from .data_cache import get_cache
 
 
 def get_market_sentiment() -> dict:
-    vix = get_vix_structure()
-    breadth = get_sp500_breadth()
-
-    risk_score = 0
-    if vix.get("current"):
-        if vix["current"] < 15:
-            risk_score += 1
-        elif vix["current"] < 20:
-            risk_score += 2
-        elif vix["current"] < 30:
-            risk_score += 3
-        else:
-            risk_score += 4
-
-    if breadth.get("spy_vs_50ma_pct") is not None:
-        if breadth["spy_vs_50ma_pct"] > 3:
-            risk_score += 1
-        elif breadth["spy_vs_50ma_pct"] > 0:
-            risk_score += 2
-        elif breadth["spy_vs_50ma_pct"] > -3:
-            risk_score += 3
-        else:
-            risk_score += 4
-
-    if risk_score <= 3:
-        sentiment = "Risk-On（积极）"
-    elif risk_score <= 5:
-        sentiment = "中性偏积极"
-    elif risk_score <= 7:
-        sentiment = "中性偏谨慎"
-    else:
-        sentiment = "Risk-Off（防御）"
-
-    return {
-        "vix": vix,
-        "breadth": breadth,
-        "risk_score": risk_score,
-        "sentiment": sentiment,
-        "timestamp": datetime.now().isoformat(),
-    }
-
-
-def get_fedwatch_probability() -> dict:
+    cache = get_cache()
+    result = {"sentiment": "中性", "risk_score": 4, "vix": {}, "breadth": {}}
     try:
-        t_note = yf.Ticker("^IRX")
-        hist_2y = t_note.history(period="1mo")
-        current_2y = float(hist_2y["Close"].iloc[-1]) if not hist_2y.empty else None
-
-        ff = yf.Ticker("ZQ=F")
-        ff_info = ff.info
-        ff_price = ff_info.get("regularMarketPrice", None)
-
-        return {
-            "current_2y_yield": round(current_2y, 2) if current_2y else None,
-            "ff_futures_price": ff_price,
-            "hike_probability": "低（市场定价维稳或降息）" if current_2y and current_2y < 4.5 else "需关注",
-        }
-    except Exception as e:
-        return {"error": str(e)}
+        df = cache.get_index(".INX")
+        if df is None or df.empty or len(df) < 20:
+            return result
+        closes = [float(c) for c in df["close"].values]
+        current = closes[-1]
+        returns = [((closes[i] - closes[i - 1]) / closes[i - 1]) * 100 for i in range(1, len(closes))]
+        vol_20d = round(np.std(returns[-20:]) * np.sqrt(252), 1)
+        vol_5d = round(np.std(returns[-5:]) * np.sqrt(252), 1) if len(returns) >= 5 else vol_20d
+        if vol_20d < 15:
+            risk_level = "低波动"
+        elif vol_20d < 25:
+            risk_level = "中等波动"
+        elif vol_20d < 35:
+            risk_level = "高波动"
+        else:
+            risk_level = "极高波动"
+        contango = "正向（波动上升）" if vol_5d > vol_20d * 1.2 else ("反向（波动下降）" if vol_5d < vol_20d * 0.8 else "持平")
+        result["vix"] = {"current": vol_20d, "contango": contango, "trend": "上升" if vol_5d > vol_20d else "下降", "risk_level": risk_level}
+        if len(closes) >= 50:
+            sma50 = np.mean(closes[-50:])
+            pct = round(((current - sma50) / sma50) * 100, 2)
+            if pct > 5:
+                signal = "牛市区间"
+            elif pct > 0:
+                signal = "温和看涨"
+            elif pct > -5:
+                signal = "温和看跌"
+            else:
+                signal = "熊市区间"
+            result["breadth"] = {"spy_vs_50ma_pct": pct, "signal": signal}
+        # Overall rating
+        risk_score = 4
+        if vol_20d < 15:
+            risk_score -= 2
+        elif vol_20d < 20:
+            risk_score -= 1
+        elif vol_20d > 30:
+            risk_score += 2
+        elif vol_20d > 25:
+            risk_score += 1
+        if result.get("breadth"):
+            b = result["breadth"]["spy_vs_50ma_pct"]
+            if b > 5:
+                risk_score -= 1
+            elif b < -5:
+                risk_score += 1
+        result["risk_score"] = max(1, min(8, risk_score))
+        result["sentiment"] = "乐观" if risk_score <= 3 else ("中性" if risk_score <= 5 else "谨慎")
+    except Exception:
+        pass
+    return result
