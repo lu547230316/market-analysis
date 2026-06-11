@@ -2,7 +2,7 @@ name: 每日市场热点分析
 
 on:
   schedule:
-    - cron: "30 0 * * 1-5"
+    - cron: "30 12 * * 1-5"
   workflow_dispatch:
 
 jobs:
