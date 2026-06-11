@@ -2,13 +2,13 @@ name: 每日市场热点分析
 
 on:
   schedule:
-    - cron: "0 13 * * 1-5"
+    - cron: "30 0 * * 1-5"
   workflow_dispatch:
 
 jobs:
   daily-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout

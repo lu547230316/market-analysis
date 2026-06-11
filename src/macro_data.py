@@ -62,7 +62,6 @@ def get_macro_data() -> dict:
 
     # DXY Dollar Index - Try Sina
     try:
-        # DXY is .DXY on some platforms
         df = ak.index_us_stock_sina(symbol='.DXY')
         if not df.empty:
             latest = df.iloc[-1]
@@ -77,7 +76,7 @@ def get_macro_data() -> dict:
     except Exception:
         pass
 
-    # Oil price - we know futures_foreign_hist doesn't work, use placeholder
+    # Oil price - placeholder
     result["indicators"].append({
         "name": "WTI原油(美元/桶)",
         "value": "~68 (请手动更新)",

@@ -123,7 +123,7 @@ def _markdown_to_html(md_text: str) -> str:
         html_parts.append("</ul>")
 
     html_parts.append("</div>")  # close content area
-    html_parts.append('<div class="footer">本报告由AI全自动生成，仅供研究参考，不构成投资建议。<br>数据来源: Yahoo Finance, Reuters, CNBC, Bloomberg, MarketWatch<br>Powered by DeepSeek v4 Pro · <a href="https://github.com/lu547230316/market-analysis">Market Analysis System v2.0</a></div>')
+    html_parts.append('<div class="footer">本报告由AI全自动生成，仅供研究参考，不构成投资建议。<br>数据来源: Yahoo Finance, Reuters, CNBC, Bloomberg, MarketWatch<br>Powered by DeepSeek v4 Pro · <a href="https://github.com/lu547230316/market-analysis">Market Analysis System v5.0</a></div>')
     html_parts.append("</div>")  # close container
 
     return "\n".join(html_parts)
